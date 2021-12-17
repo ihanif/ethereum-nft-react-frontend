@@ -48,6 +48,10 @@
   color: white;
 }
 
+.container-link {
+  margin-top: 16px;
+}
+
 .connect-wallet-button {
   background: -webkit-linear-gradient(left, #60c657, #35aee2);
   background-size: 200% 200%;
