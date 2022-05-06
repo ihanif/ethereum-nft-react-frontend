@@ -1,111 +1,92 @@
-import "./styles/App.css";
-import twitterLogo from "./assets/twitter-logo.svg";
-import { ethers } from "ethers";
-import React, { useEffect, useState } from "react";
-import myEpicNft from "./utils/MyEpicNFT.json";
-
-const TWITTER_HANDLE = "_buildspace";
-const TWITTER_LINK = `https://twitter.com/${TWITTER_HANDLE}`;
-const TOTAL_MINT_COUNT = 50;
+import './styles/App.css';
+import { ethers } from 'ethers';
+import React, { useState } from 'react';
+import myEpicNft from './utils/MyEpicNFT.json';
+import { InjectedConnector } from '@web3-react/injected-connector';
+import { WalletConnectConnector } from '@web3-react/walletconnect-connector';
+import { UAuthConnector } from '@uauth/web3-react';
+import UAuth from '@uauth/js';
+import { useWeb3React } from '@web3-react/core';
 
 // I moved the contract address to the top for easy access.
-const CONTRACT_ADDRESS = "0xCAd466b31689853e5a65BFEf2d4B4DbAF93ec327";
+const CONTRACT_ADDRESS = '0xCAd466b31689853e5a65BFEf2d4B4DbAF93ec327';
 const OPENSEA_LINK = `https://testnets.opensea.io/${CONTRACT_ADDRESS}`;
 
-const App = () => {
-  const [currentAccount, setCurrentAccount] = useState("");
+const injectedConnector = new InjectedConnector({
+  supportedChainIds: [4],
+});
 
-  const checkIfWalletIsConnected = async () => {
-    const { ethereum } = window;
+const walletconnectConnector = new WalletConnectConnector({
+  infuraId: process.env.REACT_APP_INFURA_ID,
+  supportedChainIds: [4],
+  qrcode: true,
+});
 
-    if (!ethereum) {
-      console.log("Make sure you have metamask!");
-      return;
-    } else {
-      console.log("We have the ethereum object", ethereum);
-    }
+const uauthConnector = new UAuthConnector({
+  uauth: new UAuth({
+    clientID: process.env.REACT_APP_CLIENT_ID,
+    redirectUri: 'http://localhost:3000',
+    scope: 'openid wallet',
+  }),
+  connectors: {
+    injected: injectedConnector,
+    walletconnect: walletconnectConnector,
+  },
+});
 
-    const accounts = await ethereum.request({ method: "eth_accounts" });
+function withUseWeb3React(Component) {
+  return function WrappedComponent(props) {
+    const values = useWeb3React();
+    return <Component {...props} web3ReactHookValue={values} />;
+  };
+}
 
-    if (accounts.length !== 0) {
-      const account = accounts[0];
-      console.log("Found an authorized account:", account);
-      setCurrentAccount(account);
+const App = (props) => {
+  const [currentAccount, setCurrentAccount] = useState(null);
+  const [isConnected, setIsConnected] = useState(false);
 
-      // Setup listener! This is for the case where a user comes to our site
-      // and ALREADY had their wallet connected + authorized.
-      setupEventListener();
-    } else {
-      console.log("No authorized account found");
-    }
+  const uLogin = async () => {
+    props.web3ReactHookValue
+      .activate(uauthConnector, undefined, true)
+      .then(async (r) => {
+        let user = await uauthConnector.uauth.user();
+        uauthConnector
+          .getAccount()
+          .then((account) => {
+            setCurrentAccount(user.sub);
+            setIsConnected(true);
+            window.ethereum.on('chainChanged', () => {
+              window.location.reload();
+            });
+          })
+          .catch((e) => {
+            console.error(e);
+          });
+      })
+      .catch((e) => {
+        console.error(e);
+      });
   };
 
   const connectWallet = async () => {
-    try {
-      const { ethereum } = window;
-
-      if (!ethereum) {
-        alert("Get MetaMask!");
-        return;
-      }
-
-      let chainId = await ethereum.request({ method: "eth_chainId" });
-      console.log("Connected to chain " + chainId);
-
-      // String, hex code of the chainId of the Rinkebey test network
-      const rinkebyChainId = "0x4";
-      if (chainId !== rinkebyChainId) {
-        alert("You are not connected to the Rinkeby Test Network!");
-      }
-
-      const accounts = await ethereum.request({
-        method: "eth_requestAccounts",
+    props.web3ReactHookValue
+      .activate(injectedConnector, undefined, true)
+      .then((r) => {
+        injectedConnector
+          .getAccount()
+          .then((account) => {
+            setIsConnected(true);
+            window.ethereum.on('chainChanged', () => {
+              window.location.reload();
+            });
+          })
+          .catch((e) => {
+            console.error(e);
+          });
+      })
+      .catch((e) => {
+        console.error(e);
       });
-
-      console.log("Connected", accounts[0]);
-      setCurrentAccount(accounts[0]);
-
-      // Setup listener! This is for the case where a user comes to our site
-      // and connected their wallet for the first time.
-      setupEventListener();
-    } catch (error) {
-      console.log(error);
-    }
-  };
-
-  // Setup our listener.
-  const setupEventListener = async () => {
-    // Most of this looks the same as our function askContractToMintNft
-    try {
-      const { ethereum } = window;
-
-      if (ethereum) {
-        // Same stuff again
-        const provider = new ethers.providers.Web3Provider(ethereum);
-        const signer = provider.getSigner();
-        const connectedContract = new ethers.Contract(
-          CONTRACT_ADDRESS,
-          myEpicNft.abi,
-          signer
-        );
-
-        // THIS IS THE MAGIC SAUCE.
-        // This will essentially "capture" our event when our contract throws it.
-        // If you're familiar with webhooks, it's very similar to that!
-        connectedContract.on("NewEpicNFTMinted", (from, tokenId) => {
-          console.log(from, tokenId.toNumber());
-          alert(
-            `Hey there! We've minted your NFT and sent it to your wallet. It may be blank right now. It can take a max of 10 min to show up on OpenSea. Here's the link: https://testnets.opensea.io/assets/${CONTRACT_ADDRESS}/${tokenId.toNumber()}`
-          );
-        });
-
-        console.log("Setup event listener!");
-      } else {
-        console.log("Ethereum object doesn't exist!");
-      }
-    } catch (error) {
-      console.log(error);
-    }
   };
 
   const askContractToMintNft = async () => {
@@ -121,13 +102,16 @@ const App = () => {
           signer
         );
 
-        console.log("Going to pop wallet now to pay gas...");
+        console.log('Going to pop wallet now to pay gas...');
         let nftTxn = await connectedContract.makeAnEpicNFT();
 
-        console.log("Mining...please wait.");
+        console.log('Mining...please wait.');
         await nftTxn.wait();
         console.log(nftTxn);
         console.log(
+          `Mined, see transaction: https://rinkeby.etherscan.io/tx/${nftTxn.hash}`
+        );
+        alert(
           `Mined, see transaction: https://rinkeby.etherscan.io/tx/${nftTxn.hash}`
         );
       } else {
@@ -138,17 +122,28 @@ const App = () => {
     }
   };
 
-  useEffect(() => {
-    checkIfWalletIsConnected();
-  }, []);
-
   const renderNotConnectedContainer = () => (
-    <button
-      onClick={connectWallet}
-      className="cta-button connect-wallet-button"
+    <div
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        margin: 'auto',
+        width: 'fit-content',
+      }}
     >
-      Connect to Wallet
-    </button>
+      <button
+        onClick={connectWallet}
+        className="login-btn cta-button connect-wallet-button"
+      >
+        Connect to Wallet
+      </button>
+      <button
+        onClick={uLogin}
+        className="login-btn cta-button connect-wallet-button"
+      >
+        Login with unstoppable
+      </button>
+    </div>
   );
 
   const renderMintUI = () => (
@@ -165,20 +160,19 @@ const App = () => {
       <div className="container">
         <div className="header-container">
           <p className="header gradient-text">My NFT Collection</p>
+          {isConnected && <p className="sub-text">{currentAccount}</p>}
           <p className="sub-text">
             Each unique. Each beautiful. Discover your NFT today.
           </p>
-          {currentAccount === ""
-            ? renderNotConnectedContainer()
-            : renderMintUI()}
+          {!isConnected ? renderNotConnectedContainer() : renderMintUI()}
           <div className="container-link">
             <button
               onClick={(e) => {
                 e.preventDefault();
                 const newWindow = window.open(
                   OPENSEA_LINK,
-                  "_blank",
-                  "noopener,noreferrer"
+                  '_blank',
+                  'noopener,noreferrer'
                 );
                 if (newWindow) newWindow.opener = null;
               }}
@@ -188,18 +182,9 @@ const App = () => {
             </button>
           </div>
         </div>
-        <div className="footer-container">
-          <img alt="Twitter Logo" className="twitter-logo" src={twitterLogo} />
-          <a
-            className="footer-text"
-            href={TWITTER_LINK}
-            target="_blank"
-            rel="noreferrer"
-          >{`built on @${TWITTER_HANDLE}`}</a>
-        </div>
       </div>
     </div>
   );
 };
 
-export default App;
+export default withUseWeb3React(App);

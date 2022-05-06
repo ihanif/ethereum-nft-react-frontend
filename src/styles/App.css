@@ -48,6 +48,10 @@
   color: white;
 }
 
+.login-btn {
+  margin: 10px 0;
+}
+
 .container-link {
   margin-top: 16px;
 }
